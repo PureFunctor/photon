@@ -1,4 +1,4 @@
-use std::{fs::File, time::Instant};
+use std::fs::File;
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -30,7 +30,10 @@ pub fn file_reader(file: File) -> Box<dyn FormatReader> {
     probed.format
 }
 
-pub fn play_track(reader: &mut Box<dyn FormatReader>, device: &Device) {
+pub fn play_track(
+    reader: &mut Box<dyn FormatReader>,
+    device: &Device,
+) -> symphonia::core::errors::Result<()> {
     let track = reader.default_track().unwrap();
 
     let decoder_options = DecoderOptions::default();
@@ -40,18 +43,34 @@ pub fn play_track(reader: &mut Box<dyn FormatReader>, device: &Device) {
 
     let mut audio_sink = None;
 
-    let reference = Instant::now();
-    loop {
-        let packet = reader.next_packet().unwrap();
-        let decoded = decoder.decode(&packet).unwrap();
+    let result = loop {
+        let packet = match reader.next_packet() {
+            Ok(packet) => packet,
+            Err(error) => break Err(error),
+        };
+        let decoded = match decoder.decode(&packet) {
+            Ok(decoded) => decoded,
+            Err(error) => break Err(error),
+        };
         let spec = *decoded.spec();
         let duration = decoded.capacity() as u64;
         if audio_sink.is_none() {
             audio_sink.replace(AudioSink::new(spec, duration, device));
         }
-        println!("{:?} has elapsed", reference.elapsed());
         audio_sink.as_mut().unwrap().write(decoded);
+    };
+
+    let finalize = decoder.finalize();
+
+    if let Some(verify_ok) = finalize.verify_ok {
+        if verify_ok {
+            eprintln!("Verify OK!")
+        } else {
+            eprintln!("Verify not OK!")
+        }
     }
+
+    result
 }
 
 pub struct AudioSink {
@@ -114,5 +133,5 @@ fn main() {
     let host = cpal::default_host();
     let device = host.default_output_device().unwrap();
 
-    play_track(&mut reader, &device);
+    let _ = dbg!(play_track(&mut reader, &device));
 }
