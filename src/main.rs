@@ -77,6 +77,7 @@ pub struct AudioSink {
     producer: Producer<f32>,
     stream: Stream,
     buffer: SampleBuffer<f32>,
+    preprocess: Vec<f32>,
 }
 
 impl AudioSink {
@@ -106,16 +107,24 @@ impl AudioSink {
             .unwrap();
         stream.play().unwrap();
         let buffer = SampleBuffer::<f32>::new(duration, spec);
+        let preprocess: Vec<f32> = vec![0.0; buffer.capacity()];
         Self {
             producer,
             stream,
             buffer,
+            preprocess,
         }
     }
 
     pub fn write(&mut self, buffer: AudioBufferRef) {
         self.buffer.copy_interleaved_ref(buffer);
-        let mut samples = self.buffer.samples();
+
+        self.preprocess.copy_from_slice(self.buffer.samples());
+        self.preprocess.iter_mut().for_each(|sample| {
+            *sample *= 0.25;
+        });
+
+        let mut samples = self.preprocess.as_ref();
         while let Some(offset) = self.producer.write_blocking(samples) {
             samples = &samples[offset..];
         }
