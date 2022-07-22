@@ -3,8 +3,16 @@ use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
     BufferSize, SampleRate, StreamConfig,
 };
+use crossterm::{
+    event::{read, Event, KeyCode},
+    terminal::{disable_raw_mode, enable_raw_mode},
+};
 use log::info;
-use std::{fs::File, sync::Arc, time::Duration};
+use std::{
+    fs::File,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 use symphonia::core::{
     audio::SampleBuffer,
     codecs::DecoderOptions,
@@ -90,6 +98,9 @@ impl AudioInMemory {
     pub fn onto(&self, cursor: usize, output: &mut [f32]) {
         let start = cursor;
         let end = cursor + output.len();
+        if start >= self.samples.len() || end >= self.samples.len() {
+            return;
+        }
         output.copy_from_slice(&self.samples[start..end]);
     }
 
@@ -101,7 +112,7 @@ impl AudioInMemory {
 fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let file = File::open("assets/discover_universe.flac").unwrap();
+    let file = File::open("assets/mobius.mp3").unwrap();
     let audio = AudioInMemory::from_file(file)?;
 
     let host = cpal::default_host();
@@ -112,26 +123,101 @@ fn main() -> anyhow::Result<()> {
         buffer_size: BufferSize::Default,
     };
 
+    let user_events = Arc::new(Mutex::new(Vec::new()));
+
     let stream = {
         let audio = audio.clone();
+        let user_events = user_events.clone();
         let mut cursor = 0;
+
+        let mut start_position = None;
+        let mut repeat_delta = None;
+
+        let repeat_8th =
+            (60.0 / 230.0 / 2.0 * audio.sample_rate as f64 * audio.channels as f64) as usize;
+        let repeat_16th =
+            (60.0 / 230.0 / 4.0 * audio.sample_rate as f64 * audio.channels as f64) as usize;
+
+        let mut retrigger_cursor = 0;
+
         device.build_output_stream(
             &config,
             move |output: &mut [f32], _| {
-                audio.onto(cursor, output);
+                while let Some(value) = user_events.lock().unwrap().pop() {
+                    if value == 0 {
+                        start_position.replace(cursor);
+                        retrigger_cursor = cursor;
+                        repeat_delta.replace(repeat_8th);
+                    } else if value == 1 {
+                        start_position.replace(cursor);
+                        retrigger_cursor = cursor;
+                        repeat_delta.replace(repeat_16th);
+                    } else if value == 2 {
+                        start_position = None;
+                        repeat_delta = None;
+                        retrigger_cursor = 0;
+                    }
+                }
+                if start_position.is_some() {
+                    audio.onto(retrigger_cursor, output);
+                    retrigger_cursor += output.len();
+                    if retrigger_cursor - start_position.unwrap() >= repeat_delta.unwrap() {
+                        retrigger_cursor = start_position.unwrap() + retrigger_cursor
+                            - start_position.unwrap()
+                            - repeat_delta.unwrap();
+                    }
+                } else {
+                    audio.onto(cursor, output);
+                }
                 cursor += output.len();
+                output.iter_mut().for_each(|sample| *sample *= 0.25);
             },
             |_| {},
         )
     }?;
 
-    stream.play()?;
+    stream.pause()?;
 
-    info!(
-        "Main thread is sleeping for {} seconds.",
-        audio.length().as_secs()
-    );
-    std::thread::sleep(audio.length());
+    println!("SPACEBAR - Play/Pause");
+    println!("S - Retrigger Off");
+    println!("D - Retrigger 8th");
+    println!("F - Retrigger 16th");
+    println!("Q - Quit");
+
+    enable_raw_mode()?;
+
+    let mut playing = false;
+
+    loop {
+        let event = read()?;
+
+        if event == Event::Key(KeyCode::Char(' ').into()) {
+            if !playing {
+                stream.play()?;
+            } else {
+                stream.pause()?;
+            }
+            playing = !playing;
+        };
+
+        if event == Event::Key(KeyCode::Char('d').into()) {
+            user_events.lock().unwrap().push(0);
+        };
+
+        if event == Event::Key(KeyCode::Char('f').into()) {
+            user_events.lock().unwrap().push(1);
+        };
+
+        if event == Event::Key(KeyCode::Char('s').into()) {
+            user_events.lock().unwrap().push(2);
+        };
+
+        if event == Event::Key(KeyCode::Char('q').into()) {
+            break;
+        };
+    }
+
+    disable_raw_mode()?;
 
     Ok(())
 }
