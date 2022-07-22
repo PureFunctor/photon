@@ -1,4 +1,4 @@
-use std::fs::File;
+use std::{fs::File, time::Duration};
 
 use cpal::{
     traits::{DeviceTrait, HostTrait, StreamTrait},
@@ -77,7 +77,6 @@ pub struct AudioSink {
     producer: Producer<f32>,
     stream: Stream,
     buffer: SampleBuffer<f32>,
-    preprocess: Vec<f32>,
 }
 
 impl AudioSink {
@@ -93,38 +92,70 @@ impl AudioSink {
             sample_rate: SampleRate(sample_rate),
             buffer_size: BufferSize::Default,
         };
+        let mut retrigger_buffer: Vec<f32> = vec![];
+        let mut sample_counter = 0;
+
+        let measure = 4.0;
+
+        let start_position = Duration::from_secs_f64(60.0 / 130.0 * 4.0 * measure);
+        let start_position =
+            start_position.as_millis() * sample_rate as u128 * channels as u128 / 1000;
+
+        let end_position =
+            Duration::from_secs_f64(60.0 / 130.0 * 4.0 * measure + 60.0 / 130.0 / 2.0);
+        let end_position = end_position.as_millis() * sample_rate as u128 * channels as u128 / 1000;
+
+        let stop_position =
+            Duration::from_secs_f64(60.0 / 130.0 * 4.0 * measure + 60.0 / 130.0 / 2.0 * 4.0);
+        let stop_position =
+            stop_position.as_millis() * sample_rate as u128 * channels as u128 / 1000;
+
+        let mut cursor = vec![];
+
         let stream = device
             .build_output_stream(
                 &config,
                 move |output: &mut [f32], _: &OutputCallbackInfo| {
-                    let offset = consumer.read(output).unwrap_or(0);
-                    output[offset..]
-                        .iter_mut()
-                        .for_each(|sample| *sample = f32::MID);
+                    if sample_counter as u128 >= start_position
+                        && (sample_counter as u128) < end_position
+                    {
+                        retrigger_buffer.extend_from_slice(output);
+                        dbg!("Collecting!");
+                    }
+                    if (sample_counter as u128) >= end_position
+                        && (sample_counter as u128) < stop_position
+                    {
+                        if cursor.len() < output.len() {
+                            cursor.extend_from_slice(&retrigger_buffer);
+                        }
+                        let _ = consumer.read(output).unwrap_or(0);
+                        output.copy_from_slice(&cursor[..output.len()]);
+                        cursor = cursor[output.len()..].to_vec();
+                        sample_counter += output.len();
+                        dbg!("Playing!");
+                    } else {
+                        let offset = consumer.read(output).unwrap_or(0);
+                        output[offset..]
+                            .iter_mut()
+                            .for_each(|sample| *sample = f32::MID);
+                        sample_counter += output.len();
+                    }
                 },
                 |_| {},
             )
             .unwrap();
         stream.play().unwrap();
         let buffer = SampleBuffer::<f32>::new(duration, spec);
-        let preprocess: Vec<f32> = vec![0.0; buffer.capacity()];
         Self {
             producer,
             stream,
             buffer,
-            preprocess,
         }
     }
 
     pub fn write(&mut self, buffer: AudioBufferRef) {
         self.buffer.copy_interleaved_ref(buffer);
-
-        self.preprocess.copy_from_slice(self.buffer.samples());
-        self.preprocess.iter_mut().for_each(|sample| {
-            *sample *= 0.25;
-        });
-
-        let mut samples = self.preprocess.as_ref();
+        let mut samples = self.buffer.samples();
         while let Some(offset) = self.producer.write_blocking(samples) {
             samples = &samples[offset..];
         }
