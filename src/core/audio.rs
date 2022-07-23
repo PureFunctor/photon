@@ -43,6 +43,8 @@ impl SamplesInMemory {
             .make(&track.codec_params, &decoder_opts)
             .unwrap();
 
+        let _sample_count = track.codec_params.n_frames.unwrap() * 2;
+
         let mut samples = vec![];
 
         let (channels, sample_rate, mut sample_buffer) = {

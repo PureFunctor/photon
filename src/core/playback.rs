@@ -20,13 +20,13 @@ pub struct State {
 
 /// Events related to playback.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Event {
+pub enum PlaybackEvent {
     Play,
     Pause,
     Restart,
 }
 
-pub fn initialize(samples: SamplesInMemory) -> anyhow::Result<(Stream, mpsc::Sender<Event>)> {
+pub fn initialize(samples: SamplesInMemory) -> anyhow::Result<(Stream, mpsc::Sender<PlaybackEvent>)> {
     let host = cpal::default_host();
     let device = host.default_output_device().unwrap();
 
@@ -44,16 +44,16 @@ pub fn initialize(samples: SamplesInMemory) -> anyhow::Result<(Stream, mpsc::Sen
             playing: false,
         };
 
-        let (sender, events) = mpsc::channel::<Event>();
+        let (sender, events) = mpsc::channel::<PlaybackEvent>();
 
         let stream = device.build_output_stream(
             &config,
             move |buffer: &mut [f32], _: &OutputCallbackInfo| {
                 for event in events.try_iter() {
                     match event {
-                        Event::Play => state.playing = true,
-                        Event::Pause => state.playing = false,
-                        Event::Restart => state.start_offset = 0,
+                        PlaybackEvent::Play => state.playing = true,
+                        PlaybackEvent::Pause => state.playing = false,
+                        PlaybackEvent::Restart => state.start_offset = 0,
                     }
                 }
                 if state.playing {
