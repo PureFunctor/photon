@@ -43,20 +43,24 @@ impl SamplesInMemory {
             .make(&track.codec_params, &decoder_opts)
             .unwrap();
 
-        let (spec, duration) = {
+        let mut samples = vec![];
+
+        let (channels, sample_rate, mut sample_buffer) = {
             let packet = reader
                 .next_packet()
                 .context("while reading the next packet")?;
             let decoded = decoder
                 .decode(&packet)
                 .context("while decoding the next packet")?;
-            (*decoded.spec(), decoded.capacity() as u64)
+            let duration = decoded.capacity() as u64;
+            let spec = *decoded.spec();
+            let mut sample_buffer = SampleBuffer::<f32>::new(duration, spec);
+            sample_buffer.copy_interleaved_ref(decoded);
+            samples.extend_from_slice(sample_buffer.samples());
+            let channels = spec.channels.count();
+            let sample_rate = spec.rate as usize;
+            (channels, sample_rate, sample_buffer)
         };
-
-        let mut samples = vec![];
-        let mut sample_buffer = SampleBuffer::<f32>::new(duration, spec);
-        let channels = spec.channels.count();
-        let sample_rate = spec.rate as usize;
 
         let _: Result<(), _> = loop {
             let packet = match reader.next_packet() {
