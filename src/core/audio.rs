@@ -114,6 +114,10 @@ impl SamplesInMemory {
             buffer.copy_from_slice(&self.samples[start_offset..end_offset]);
         }
     }
+
+    pub fn len(&self) -> usize {
+        self.samples.len()
+    }
 }
 
 #[cfg(test)]

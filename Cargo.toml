@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.58"
 cpal = "0.13.5"
-crossterm = "0.24.0"
+eframe = "0.18.0"
 env_logger = "0.9.0"
 log = "0.4.17"
 rb = "0.4.0"
