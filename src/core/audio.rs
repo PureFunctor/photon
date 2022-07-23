@@ -124,6 +124,10 @@ impl SamplesInMemory {
     pub fn len(&self) -> usize {
         self.samples.len()
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.samples.len() == 0
+    }
 }
 
 #[cfg(test)]
