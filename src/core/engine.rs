@@ -14,7 +14,10 @@ use rtrb::{Consumer, Producer};
 
 /// Messages into the engine.
 #[derive(Debug)]
-pub enum MessageIntoEngine {}
+pub enum MessageIntoEngine {
+    Play,
+    Pause,
+}
 
 /// Messages from the engine.
 #[derive(Debug)]
@@ -81,13 +84,19 @@ impl Engine {
     /// way to alleviate this is to mute the `buffer` by filling it with zeroes
     /// if you expect to wait on some external event.
     pub fn process(&mut self, buffer: &mut [f32]) {
-        while let Ok(_) = self.into_engine.pop() {
-            continue;
+        while let Ok(message) = self.into_engine.pop() {
+            match message {
+                MessageIntoEngine::Play => self.playing = true,
+                MessageIntoEngine::Pause => self.playing = false,
+            }
         }
         if !self.playing {
             buffer.iter_mut().for_each(|sample| *sample = 0.0);
         } else {
-            return;
+            for (index, sample) in buffer.iter_mut().enumerate() {
+                *sample = self.samples[self.index + index];
+            }
+            self.index += buffer.len();
         }
     }
 }

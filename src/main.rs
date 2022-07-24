@@ -1,189 +1,93 @@
-use std::{
-    fmt::Write,
-    fs::File,
-    io,
-    sync::{Arc, Mutex},
-};
+use std::fs::File;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
+use cpal::traits::{DeviceTrait, HostTrait};
 use eframe::{egui, App};
-use log::info;
-use log_buffer::LogBuffer;
+use log::{error, info};
 use photon::core::{
     audio::SamplesInMemory,
-    playback::{Closure, PlaybackEvent, ToClosure},
+    engine::{Engine, MessageFromEngine, MessageIntoEngine},
 };
-use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
-
-struct LogBufferWriter(Arc<Mutex<LogBuffer<[u8; 2048]>>>);
-
-impl io::Write for LogBufferWriter {
-    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
-        let log_buffer = &mut *self.0.lock().unwrap();
-        log_buffer
-            .write_str(std::str::from_utf8(buffer).unwrap())
-            .unwrap();
-        Ok(buffer.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
+use rtrb::{Consumer, Producer};
 
 fn main() -> anyhow::Result<()> {
-    let log_buffer = Arc::new(Mutex::new(LogBuffer::new([0; 2048])));
-    let log_writer = LogBufferWriter(log_buffer.clone());
-    CombinedLogger::init(vec![
-        TermLogger::new(
-            log::LevelFilter::Info,
-            Config::default(),
-            TerminalMode::Stderr,
-            ColorChoice::Always,
-        ),
-        WriteLogger::new(log::LevelFilter::Info, Config::default(), log_writer),
-    ])?;
+    let file = File::open("assets/erin.flac")?;
+    let samples = SamplesInMemory::try_from_file(file)?;
 
-    let closure = Closure::new();
-    let photon = Photon::new(closure, log_buffer);
-    let options = eframe::NativeOptions::default();
+    if samples.sample_rate != 44100 {
+        bail!("Unsupported sample rate {}", samples.sample_rate);
+    }
 
+    if samples.channels != 2 {
+        bail!("Unsupported channel count {}", samples.channels);
+    }
+
+    let (into_engine_p, into_engine_c) = rtrb::RingBuffer::<MessageIntoEngine>::new(8);
+    let (from_engine_p, from_engine_c) = rtrb::RingBuffer::<MessageFromEngine>::new(8);
+    let mut engine = Engine::new(samples.samples, into_engine_c, from_engine_p);
+
+    let host = cpal::default_host();
+    let device = host
+        .default_output_device()
+        .context("No default output device!")?;
+    let config = cpal::StreamConfig {
+        channels: 2,
+        sample_rate: cpal::SampleRate(44100),
+        buffer_size: cpal::BufferSize::Default,
+    };
+
+    let _stream = device.build_output_stream(
+        &config,
+        move |buffer, _| engine.process(buffer),
+        |e| error!("Error in stream: {}", e),
+    )?;
+
+    let photon = Photon::new(into_engine_p, from_engine_c);
+    let native_options = eframe::NativeOptions::default();
     eframe::run_native(
-        "Photon - Interactive Music Player",
-        options,
+        "Photon",
+        native_options,
         Box::new(|cc| {
             cc.egui_ctx.set_visuals(egui::Visuals::dark());
             Box::new(photon)
         }),
-    )
+    );
 }
 
-#[derive(Debug, Clone, Copy)]
-pub enum Status<T> {
-    Nothing,
-    Loading,
-    Loaded(T),
-}
-
-impl<T> Status<T> {
-    pub fn as_ref(&self) -> Status<&T> {
-        match *self {
-            Self::Nothing => Status::Nothing,
-            Self::Loading => Status::Loading,
-            Self::Loaded(ref value) => Status::Loaded(value),
-        }
-    }
-
-    #[inline]
-    pub fn set_loading(&mut self) {
-        *self = Status::Loading;
-    }
-
-    #[inline]
-    pub fn set_loaded(&mut self, value: T) {
-        *self = Status::Loaded(value);
-    }
-
-    #[inline]
-    pub fn is_loaded(&self) -> bool {
-        matches!(self, Status::Loaded(_))
-    }
-}
-
-/// The "I just want this done" type.
-type State<T> = Arc<Mutex<Status<T>>>;
-
+/// The application struct.
 struct Photon {
-    file: State<String>,
-    closure: Closure,
-    log_buffer: Arc<Mutex<LogBuffer<[u8; 2048]>>>,
+    into_engine: Producer<MessageIntoEngine>,
+    from_engine: Consumer<MessageFromEngine>,
 }
 
 impl Photon {
-    fn new(closure: Closure, log_buffer: Arc<Mutex<LogBuffer<[u8; 2048]>>>) -> Self {
+    fn new(
+        into_engine: Producer<MessageIntoEngine>,
+        from_engine: Consumer<MessageFromEngine>,
+    ) -> Self {
         Self {
-            file: Arc::new(Mutex::new(Status::Nothing)),
-            closure,
-            log_buffer,
+            into_engine,
+            from_engine,
         }
     }
 }
 
 impl App for Photon {
-    fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &eframe::egui::Context, _: &mut eframe::Frame) {
+        while let Ok(_message) = self.from_engine.pop() {
+            continue;
+        }
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Photon - Interactive Music Player");
+            ui.heading("photon - interactive music player");
             ui.separator();
-            ui.horizontal(|ui| {
-                if ui.button("Choose File").clicked() {
-                    let file = self.file.clone();
-                    let to_closure = self.closure.to_closure.clone();
-                    std::thread::spawn(move || {
-                        file.lock().unwrap().set_loading();
-                        let result: anyhow::Result<_> = (|| {
-                            let path = rfd::FileDialog::new()
-                                .pick_file()
-                                .context("No file chosen, doing nothing.")?;
-                            let mut name = String::new();
-                            name.push_str(
-                                path.to_str().context("Could not convert from OS string.")?,
-                            );
-                            let file = File::open(path).context("Could not open file")?;
-                            let samples = SamplesInMemory::try_from_file(file)?;
-                            to_closure.send(ToClosure::Initialize(samples))?;
-                            Ok(name)
-                        })();
-                        match result {
-                            Ok(result) => file.lock().unwrap().set_loaded(result),
-                            Err(error) => info!("{}", error),
-                        }
-                    });
-                }
-                if let Status::Loaded(name) = self.file.lock().unwrap().as_ref() {
-                    ui.label(name);
-                }
-            });
-            if let Status::Loaded(_) = self.file.lock().unwrap().as_ref() {
-                if ui.button("Play").clicked() {
-                    match self
-                        .closure
-                        .to_closure
-                        .send(ToClosure::Playback(PlaybackEvent::Play))
-                    {
-                        Ok(_) => {}
-                        Err(error) => info!("{}", error),
-                    }
-                }
-                if ui.button("Pause").clicked() {
-                    match self
-                        .closure
-                        .to_closure
-                        .send(ToClosure::Playback(PlaybackEvent::Pause))
-                    {
-                        Ok(_) => {}
-                        Err(error) => info!("{}", error),
-                    }
-                }
-                if ui.button("Restart").clicked() {
-                    match self
-                        .closure
-                        .to_closure
-                        .send(ToClosure::Playback(PlaybackEvent::Restart))
-                    {
-                        Ok(_) => {}
-                        Err(error) => info!("{}", error),
-                    }
-                }
-            }
-        });
-        egui::TopBottomPanel::bottom("bottom-panel").show(ctx, |ui| {
-            ui.add_space(3.0);
-            ui.label("Error Log");
-            ui.separator();
-            ui.set_min_height(128.0);
-            egui::ScrollArea::vertical()
-                .auto_shrink([false, false])
-                .show(ui, |ui| ui.label(self.log_buffer.lock().unwrap().extract()));
+            if ui.button("Play").clicked() {
+                info!("Sending play signal to engine...");
+                self.into_engine.push(MessageIntoEngine::Play).unwrap();
+            };
+            if ui.button("Pause").clicked() {
+                info!("Sending pause signal to engine...");
+                self.into_engine.push(MessageIntoEngine::Pause).unwrap();
+            };
         });
     }
 }
