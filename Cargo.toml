@@ -13,5 +13,6 @@ log = "0.4.17"
 log_buffer = "1.2.0"
 rb = "0.4.0"
 rfd = "0.9.1"
+rtrb = "0.2.2"
 simplelog = "0.12.0"
 symphonia = { version = "0.5.1", features = ["mp3"] }
