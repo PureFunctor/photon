@@ -1,5 +1,6 @@
 use std::{
     fmt::Write,
+    fs::File,
     io,
     sync::{Arc, Mutex},
 };
@@ -8,7 +9,10 @@ use anyhow::Context;
 use eframe::{egui, App};
 use log::info;
 use log_buffer::LogBuffer;
-use photon::core::playback::Closure;
+use photon::core::{
+    audio::SamplesInMemory,
+    playback::{Closure, PlaybackEvent, ToClosure},
+};
 use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
 
 struct LogBufferWriter(Arc<Mutex<LogBuffer<[u8; 2048]>>>);
@@ -113,9 +117,10 @@ impl App for Photon {
             ui.horizontal(|ui| {
                 if ui.button("Choose File").clicked() {
                     let file = self.file.clone();
+                    let to_closure = self.closure.to_closure.clone();
                     std::thread::spawn(move || {
                         file.lock().unwrap().set_loading();
-                        let result: anyhow::Result<String> = (|| {
+                        let result: anyhow::Result<_> = (|| {
                             let path = rfd::FileDialog::new()
                                 .pick_file()
                                 .context("No file chosen, doing nothing.")?;
@@ -123,6 +128,9 @@ impl App for Photon {
                             name.push_str(
                                 path.to_str().context("Could not convert from OS string.")?,
                             );
+                            let file = File::open(path).context("Could not open file")?;
+                            let samples = SamplesInMemory::try_from_file(file)?;
+                            to_closure.send(ToClosure::Initialize(samples))?;
                             Ok(name)
                         })();
                         match result {
@@ -135,6 +143,38 @@ impl App for Photon {
                     ui.label(name);
                 }
             });
+            if let Status::Loaded(_) = self.file.lock().unwrap().as_ref() {
+                if ui.button("Play").clicked() {
+                    match self
+                        .closure
+                        .to_closure
+                        .send(ToClosure::Playback(PlaybackEvent::Play))
+                    {
+                        Ok(_) => {}
+                        Err(error) => info!("{}", error),
+                    }
+                }
+                if ui.button("Pause").clicked() {
+                    match self
+                        .closure
+                        .to_closure
+                        .send(ToClosure::Playback(PlaybackEvent::Pause))
+                    {
+                        Ok(_) => {}
+                        Err(error) => info!("{}", error),
+                    }
+                }
+                if ui.button("Restart").clicked() {
+                    match self
+                        .closure
+                        .to_closure
+                        .send(ToClosure::Playback(PlaybackEvent::Restart))
+                    {
+                        Ok(_) => {}
+                        Err(error) => info!("{}", error),
+                    }
+                }
+            }
         });
         egui::TopBottomPanel::bottom("bottom-panel").show(ctx, |ui| {
             ui.add_space(3.0);
@@ -143,9 +183,7 @@ impl App for Photon {
             ui.set_min_height(128.0);
             egui::ScrollArea::vertical()
                 .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.label(self.log_buffer.lock().unwrap().extract())
-                });
+                .show(ui, |ui| ui.label(self.log_buffer.lock().unwrap().extract()));
         });
     }
 }

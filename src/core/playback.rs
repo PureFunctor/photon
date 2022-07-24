@@ -42,11 +42,11 @@ pub enum FromClosure {}
 /// The closure around the `Stream` instance.
 pub struct Closure {
     /// The handle of the thread containing the stream.
-    handle: JoinHandle<anyhow::Result<()>>,
+    _handle: JoinHandle<anyhow::Result<()>>,
     /// An event sender for communication into the closure.
-    to_closure: Sender<ToClosure>,
+    pub to_closure: Sender<ToClosure>,
     /// An event receiver for communication from the closure.
-    from_closure: Receiver<FromClosure>,
+    pub from_closure: Receiver<FromClosure>,
 }
 
 impl Closure {
@@ -54,7 +54,7 @@ impl Closure {
         let (to_closure_s, to_closure_r) = mpsc::channel();
         let (_from_closure_s, from_closure_r) = mpsc::channel();
 
-        let handle: JoinHandle<anyhow::Result<()>> = std::thread::spawn(move || {
+        let _handle: JoinHandle<anyhow::Result<()>> = std::thread::spawn(move || {
             let host = cpal::default_host();
             let device = host
                 .default_output_device()
@@ -111,7 +111,7 @@ impl Closure {
         });
 
         Self {
-            handle,
+            _handle,
             to_closure: to_closure_s,
             from_closure: from_closure_r,
         }
