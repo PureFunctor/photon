@@ -91,12 +91,45 @@ impl Engine {
             }
         }
         if !self.playing {
-            buffer.iter_mut().for_each(|sample| *sample = 0.0);
+            quiet(buffer);
         } else {
             for (index, sample) in buffer.iter_mut().enumerate() {
-                *sample = self.samples[self.index + index];
+                let index = self.index + index;
+                if index >= self.samples.len() {
+                    *sample = 0.0;
+                } else {
+                    *sample = self.samples[index];
+                }
             }
             self.index += buffer.len();
         }
+    }
+}
+
+/// Fill a buffer with silence.
+pub fn quiet(buffer: &mut [f32]) {
+    for sample in buffer.iter_mut() {
+        *sample = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use rtrb::RingBuffer;
+
+    use super::Engine;
+
+    #[test]
+    fn sample_overflow() {
+        let samples = Arc::new(vec![1.0; 4]);
+        let (_, into_engine) = RingBuffer::new(8);
+        let (from_engine, _) = RingBuffer::new(8);
+        let mut engine = Engine::new(samples, into_engine, from_engine);
+        let mut buffer = vec![0.0; 8];
+        engine.playing = true;
+        engine.process(&mut buffer);
+        assert_eq!(buffer, vec![1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0]);
     }
 }
