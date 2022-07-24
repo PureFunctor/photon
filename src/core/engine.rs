@@ -12,11 +12,15 @@ use std::sync::Arc;
 
 use rtrb::{Consumer, Producer};
 
+use super::effect::Retrigger;
+
 /// Messages into the engine.
 #[derive(Debug)]
 pub enum MessageIntoEngine {
     Play,
     Pause,
+    RetriggerOn(f32),
+    RetriggerOff,
 }
 
 /// Messages from the engine.
@@ -48,6 +52,8 @@ pub struct Engine {
     pub into_engine: Consumer<MessageIntoEngine>,
     /// A channel for outgoing messages.
     pub from_engine: Producer<MessageFromEngine>,
+    /// The retrigger effect.
+    pub retrigger: Retrigger,
 }
 
 impl Engine {
@@ -56,6 +62,7 @@ impl Engine {
         samples: Arc<Vec<f32>>,
         into_engine: Consumer<MessageIntoEngine>,
         from_engine: Producer<MessageFromEngine>,
+        retrigger: Retrigger,
     ) -> Self {
         Self {
             samples,
@@ -64,6 +71,7 @@ impl Engine {
             total: 0,
             into_engine,
             from_engine,
+            retrigger,
         }
     }
 }
@@ -88,20 +96,29 @@ impl Engine {
             match message {
                 MessageIntoEngine::Play => self.playing = true,
                 MessageIntoEngine::Pause => self.playing = false,
+                MessageIntoEngine::RetriggerOn(factor) => {
+                    self.retrigger.initialize(self.index, factor);
+                }
+                MessageIntoEngine::RetriggerOff => {
+                    self.retrigger.deinitialize();
+                }
             }
         }
         if !self.playing {
             quiet(buffer);
         } else {
-            for (index, sample) in buffer.iter_mut().enumerate() {
-                let index = self.index + index;
-                if index >= self.samples.len() {
-                    *sample = 0.0;
+            let other = self.index;
+            for index in 0..buffer.len() / 2 {
+                if self.index * 2 >= self.samples.len() {
+                    buffer[index * 2] = 0.0;
+                    buffer[index * 2 + 1] = 0.0;
                 } else {
-                    *sample = self.samples[index];
+                    buffer[index * 2] = self.samples[self.index * 2];
+                    buffer[index * 2 + 1] = self.samples[self.index * 2 + 1];
                 }
+                self.index += 1;
             }
-            self.index += buffer.len();
+            self.retrigger.process(other, buffer);
         }
     }
 }
@@ -119,6 +136,8 @@ mod tests {
 
     use rtrb::RingBuffer;
 
+    use crate::core::effect::Retrigger;
+
     use super::Engine;
 
     #[test]
@@ -126,7 +145,8 @@ mod tests {
         let samples = Arc::new(vec![1.0; 4]);
         let (_, into_engine) = RingBuffer::new(8);
         let (from_engine, _) = RingBuffer::new(8);
-        let mut engine = Engine::new(samples, into_engine, from_engine);
+        let retrigger = Retrigger::new(samples.clone(), 0.0);
+        let mut engine = Engine::new(samples, into_engine, from_engine, retrigger);
         let mut buffer = vec![0.0; 8];
         engine.playing = true;
         engine.process(&mut buffer);

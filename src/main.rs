@@ -6,12 +6,12 @@ use eframe::{egui, App};
 use log::{error, info};
 use photon::core::{
     audio::SamplesInMemory,
-    engine::{Engine, MessageFromEngine, MessageIntoEngine},
+    engine::{Engine, MessageFromEngine, MessageIntoEngine}, effect::Retrigger,
 };
 use rtrb::{Consumer, Producer};
 
 fn main() -> anyhow::Result<()> {
-    let file = File::open("assets/erin.flac")?;
+    let file = File::open("assets/decoy.mp3")?;
     let samples = SamplesInMemory::try_from_file(file)?;
 
     if samples.sample_rate != 44100 {
@@ -24,7 +24,8 @@ fn main() -> anyhow::Result<()> {
 
     let (into_engine_p, into_engine_c) = rtrb::RingBuffer::<MessageIntoEngine>::new(8);
     let (from_engine_p, from_engine_c) = rtrb::RingBuffer::<MessageFromEngine>::new(8);
-    let mut engine = Engine::new(samples.samples, into_engine_c, from_engine_p);
+    let retrigger = Retrigger::new(samples.samples.clone(), 180.0);
+    let mut engine = Engine::new(samples.samples, into_engine_c, from_engine_p, retrigger);
 
     let host = cpal::default_host();
     let device = host
@@ -77,17 +78,43 @@ impl App for Photon {
         while let Ok(_message) = self.from_engine.pop() {
             continue;
         }
+        if ctx.input().key_pressed(egui::Key::Q) {
+            self.into_engine
+                .push(MessageIntoEngine::RetriggerOff)
+                .unwrap();
+        }
+        if ctx.input().key_pressed(egui::Key::W) {
+            self.into_engine
+                .push(MessageIntoEngine::RetriggerOn(8.0))
+                .unwrap();
+        }
+        if ctx.input().key_pressed(egui::Key::E) {
+            self.into_engine
+                .push(MessageIntoEngine::RetriggerOn(16.0))
+                .unwrap();
+        }
+        if ctx.input().key_pressed(egui::Key::R) {
+            self.into_engine
+                .push(MessageIntoEngine::RetriggerOn(32.0))
+                .unwrap();
+        }
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("photon - interactive music player");
             ui.separator();
-            if ui.button("Play").clicked() {
-                info!("Sending play signal to engine...");
-                self.into_engine.push(MessageIntoEngine::Play).unwrap();
-            };
-            if ui.button("Pause").clicked() {
-                info!("Sending pause signal to engine...");
-                self.into_engine.push(MessageIntoEngine::Pause).unwrap();
-            };
+            ui.label("Q - Retrigger Off");
+            ui.label("W - Retrigger 8th");
+            ui.label("E - Retrigger 16th");
+            ui.label("R - Retrigger 32nd");
+            ui.horizontal(|ui| {
+                if ui.button("Play").clicked() {
+                    info!("Sending play signal to engine...");
+                    self.into_engine.push(MessageIntoEngine::Play).unwrap();
+                };
+                if ui.button("Pause").clicked() {
+                    info!("Sending pause signal to engine...");
+                    self.into_engine.push(MessageIntoEngine::Pause).unwrap();
+                };
+            })
         });
     }
 }
