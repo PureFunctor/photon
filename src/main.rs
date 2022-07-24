@@ -1,15 +1,47 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    fmt::Write,
+    io,
+    sync::{Arc, Mutex},
+};
 
 use anyhow::Context;
 use eframe::{egui, App};
-use log::error;
+use log::info;
+use log_buffer::LogBuffer;
 use photon::core::playback::Closure;
+use simplelog::{ColorChoice, CombinedLogger, Config, TermLogger, TerminalMode, WriteLogger};
+
+struct LogBufferWriter(Arc<Mutex<LogBuffer<[u8; 2048]>>>);
+
+impl io::Write for LogBufferWriter {
+    fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+        let log_buffer = &mut *self.0.lock().unwrap();
+        log_buffer
+            .write_str(std::str::from_utf8(buffer).unwrap())
+            .unwrap();
+        Ok(buffer.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
 
 fn main() -> anyhow::Result<()> {
-    env_logger::init();
+    let log_buffer = Arc::new(Mutex::new(LogBuffer::new([0; 2048])));
+    let log_writer = LogBufferWriter(log_buffer.clone());
+    CombinedLogger::init(vec![
+        TermLogger::new(
+            log::LevelFilter::Info,
+            Config::default(),
+            TerminalMode::Stderr,
+            ColorChoice::Always,
+        ),
+        WriteLogger::new(log::LevelFilter::Info, Config::default(), log_writer),
+    ])?;
 
     let closure = Closure::new();
-    let photon = Photon::new(closure);
+    let photon = Photon::new(closure, log_buffer);
     let options = eframe::NativeOptions::default();
 
     eframe::run_native(
@@ -60,13 +92,15 @@ type State<T> = Arc<Mutex<Status<T>>>;
 struct Photon {
     file: State<String>,
     closure: Closure,
+    log_buffer: Arc<Mutex<LogBuffer<[u8; 2048]>>>,
 }
 
 impl Photon {
-    fn new(closure: Closure) -> Self {
+    fn new(closure: Closure, log_buffer: Arc<Mutex<LogBuffer<[u8; 2048]>>>) -> Self {
         Self {
             file: Arc::new(Mutex::new(Status::Nothing)),
             closure,
+            log_buffer,
         }
     }
 }
@@ -84,7 +118,7 @@ impl App for Photon {
                         let result: anyhow::Result<String> = (|| {
                             let path = rfd::FileDialog::new()
                                 .pick_file()
-                                .context("No file picked")?;
+                                .context("No file chosen, doing nothing.")?;
                             let mut name = String::new();
                             name.push_str(
                                 path.to_str().context("Could not convert from OS string.")?,
@@ -93,7 +127,7 @@ impl App for Photon {
                         })();
                         match result {
                             Ok(result) => file.lock().unwrap().set_loaded(result),
-                            Err(error) => error!("{}", error),
+                            Err(error) => info!("{}", error),
                         }
                     });
                 }
@@ -106,11 +140,12 @@ impl App for Photon {
             ui.add_space(3.0);
             ui.label("Error Log");
             ui.separator();
-            ui.add(
-                egui::TextEdit::multiline(&mut "In the beginning, there was darkness...")
-                    .code_editor()
-                    .desired_width(f32::INFINITY),
-            );
+            ui.set_min_height(128.0);
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.label(self.log_buffer.lock().unwrap().extract())
+                });
         });
     }
 }
