@@ -12,7 +12,7 @@ use std::sync::Arc;
 
 use rtrb::{Consumer, Producer};
 
-use super::effect::{Retrigger, RetriggerParameters};
+use super::effect::{Retrigger, RetriggerParameters, TranceGate, TranceGateParameters};
 
 /// Messages into the engine.
 #[derive(Debug)]
@@ -25,6 +25,12 @@ pub enum MessageIntoEngine {
         mix_factor: f32,
     },
     RetriggerOff,
+    TranceGateOn {
+        gate_factor: f32,
+        beats_per_minute: f32,
+        mix_factor: f32,
+    },
+    TranceGateOff,
 }
 
 /// Messages from the engine.
@@ -58,6 +64,8 @@ pub struct Engine {
     pub from_engine: Producer<MessageFromEngine>,
     /// The retrigger audio effect.
     pub retrigger: Retrigger,
+    /// The trance gate audio effect.
+    pub trance_gate: TranceGate,
 }
 
 impl Engine {
@@ -68,6 +76,7 @@ impl Engine {
         from_engine: Producer<MessageFromEngine>,
     ) -> Self {
         let retrigger = Retrigger::new(samples.clone());
+        let trance_gate = TranceGate::new(samples.clone());
         Self {
             samples,
             index: 0,
@@ -76,6 +85,7 @@ impl Engine {
             into_engine,
             from_engine,
             retrigger,
+            trance_gate,
         }
     }
 }
@@ -116,6 +126,22 @@ impl Engine {
                 MessageIntoEngine::RetriggerOff => {
                     self.retrigger.deinitialize();
                 }
+                MessageIntoEngine::TranceGateOn {
+                    gate_factor,
+                    beats_per_minute,
+                    mix_factor,
+                } => {
+                    let parameters = TranceGateParameters::new(
+                        self.index,
+                        gate_factor,
+                        beats_per_minute,
+                        mix_factor,
+                    );
+                    self.trance_gate.initialize(parameters);
+                }
+                MessageIntoEngine::TranceGateOff => {
+                    self.trance_gate.deinitialize();
+                }
             }
         }
         if !self.playing {
@@ -133,6 +159,7 @@ impl Engine {
                 self.index += 1;
             }
             self.retrigger.process(track_index, buffer);
+            self.trance_gate.process(track_index, buffer);
         }
     }
 }

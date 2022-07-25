@@ -11,7 +11,7 @@ use photon::core::{
 use rtrb::{Consumer, Producer};
 
 fn main() -> anyhow::Result<()> {
-    let file = File::open("assets/erin.flac")?;
+    let file = File::open("assets/aragami.mp3")?;
     let samples = SamplesInMemory::try_from_file(file)?;
 
     if samples.sample_rate != 44100 {
@@ -86,7 +86,7 @@ impl App for Photon {
             self.into_engine
                 .push(MessageIntoEngine::RetriggerOn {
                     repeat_factor: 8.0,
-                    beats_per_minute: 188.0,
+                    beats_per_minute: 196.0,
                     mix_factor: 0.8,
                 })
                 .unwrap();
@@ -95,7 +95,7 @@ impl App for Photon {
             self.into_engine
                 .push(MessageIntoEngine::RetriggerOn {
                     repeat_factor: 16.0,
-                    beats_per_minute: 188.0,
+                    beats_per_minute: 196.0,
                     mix_factor: 0.8,
                 })
                 .unwrap();
@@ -104,8 +104,40 @@ impl App for Photon {
             self.into_engine
                 .push(MessageIntoEngine::RetriggerOn {
                     repeat_factor: 32.0,
-                    beats_per_minute: 188.0,
+                    beats_per_minute: 196.0,
                     mix_factor: 0.8,
+                })
+                .unwrap();
+        }
+        if ctx.input().key_pressed(egui::Key::A) {
+            self.into_engine
+                .push(MessageIntoEngine::TranceGateOff)
+                .unwrap();
+        }
+        if ctx.input().key_pressed(egui::Key::S) {
+            self.into_engine
+                .push(MessageIntoEngine::TranceGateOn {
+                    gate_factor: 8.0,
+                    beats_per_minute: 196.0,
+                    mix_factor: 0.9,
+                })
+                .unwrap();
+        }
+        if ctx.input().key_pressed(egui::Key::D) {
+            self.into_engine
+                .push(MessageIntoEngine::TranceGateOn {
+                    gate_factor: 16.0,
+                    beats_per_minute: 196.0,
+                    mix_factor: 0.9,
+                })
+                .unwrap();
+        }
+        if ctx.input().key_pressed(egui::Key::F) {
+            self.into_engine
+                .push(MessageIntoEngine::TranceGateOn {
+                    gate_factor: 32.0,
+                    beats_per_minute: 196.0,
+                    mix_factor: 0.9,
                 })
                 .unwrap();
         }
@@ -116,6 +148,10 @@ impl App for Photon {
             ui.label("W - Retrigger 8th");
             ui.label("E - Retrigger 16th");
             ui.label("R - Retrigger 32nd");
+            ui.label("A - TranceGate Off");
+            ui.label("S - TranceGate 8th");
+            ui.label("D - TranceGate 16th");
+            ui.label("F - TranceGate 32nd");
             ui.horizontal(|ui| {
                 if ui.button("Play").clicked() {
                     info!("Sending play signal to engine...");

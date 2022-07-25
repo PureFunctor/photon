@@ -1,5 +1,5 @@
 //! Repeats a short duration of samples while active.
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy)]
 /// The parameters for the audio effect.
