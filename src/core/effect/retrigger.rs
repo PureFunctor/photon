@@ -8,8 +8,6 @@ pub struct RetriggerParameters {
     pub repeat_start: usize,
     /// The end position of the repetition.
     pub repeat_end: usize,
-    /// The duration of the retrigger effect.
-    pub repeat_duration: Duration,
     /// The beat division to snap to.
     pub repeat_factor: f32,
     /// The threshold for fading between repetitions.
@@ -45,17 +43,14 @@ impl RetriggerParameters {
         beats_per_minute: f32,
         mix_factor: f32,
     ) -> Self {
-        let repeat_duration =
-            Duration::from_secs_f32(60.0 / beats_per_minute * 4.0 / repeat_factor);
-        let repeat_samples = (repeat_duration.as_secs() * 44100)
-            + (repeat_duration.subsec_millis() * 44100 / 1000) as u64;
+        let repeat_duration = 60.0 / beats_per_minute * 4.0 / repeat_factor;
+        let repeat_samples = (repeat_duration * 44100.0) as usize;
         let repeat_end = repeat_start + repeat_samples as usize;
         let fade_threshold = (repeat_samples as usize / 4).min(441);
         let mix_factor = mix_factor.clamp(0.0, 1.0);
         Self {
             repeat_start,
             repeat_end,
-            repeat_duration,
             repeat_factor,
             beats_per_minute,
             fade_threshold,
