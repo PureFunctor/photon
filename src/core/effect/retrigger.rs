@@ -125,17 +125,30 @@ impl Retrigger {
             if current_index >= parameters.repeat_end {
                 current_index = parameters.repeat_start;
             }
+
             let fade_factor = parameters.fade_factor(current_index);
-            buffer[index * 2]
-                // retrigger track
-                = fade_factor * self.samples[current_index * 2] * parameters.mix_factor
-                // actual track
-                + self.samples[(track_index + index) * 2] * (1.0 - parameters.mix_factor);
-            buffer[index * 2 + 1]
-                // retrigger track
-                = fade_factor * self.samples[current_index * 2 + 1] * parameters.mix_factor
-                // actual track
-                + self.samples[(track_index + index) * 2 + 1] * (1.0 - parameters.mix_factor);
+
+            let (retrigger_0, retrigger_1) = if current_index * 2 >= self.samples.len() {
+                (0.0, 0.0)
+            } else {
+                (
+                    fade_factor * self.samples[current_index * 2] * parameters.mix_factor,
+                    fade_factor * self.samples[current_index * 2 + 1] * parameters.mix_factor,
+                )
+            };
+
+            let (original_0, original_1) = if (track_index + index) * 2 >= self.samples.len() {
+                (0.0, 0.0)
+            } else {
+                (
+                    self.samples[(track_index + index) * 2] * (1.0 - parameters.mix_factor),
+                    self.samples[(track_index + index) * 2 + 1] * (1.0 - parameters.mix_factor),
+                )
+            };
+
+            buffer[index * 2] = retrigger_0 + original_0;
+            buffer[index * 2 + 1] = retrigger_1 + original_1;
+
             current_index += 1;
         }
         self.index = Some(current_index);
