@@ -50,8 +50,8 @@ impl RetriggerParameters {
         let repeat_samples = (repeat_duration.as_secs() * 44100)
             + (repeat_duration.subsec_millis() * 44100 / 1000) as u64;
         let repeat_end = repeat_start + repeat_samples as usize;
-        let fade_threshold = (repeat_samples as usize).min(441);
-        let mix_factor = mix_factor.max(1.0);
+        let fade_threshold = (repeat_samples as usize / 4).min(441);
+        let mix_factor = mix_factor.clamp(0.0, 1.0);
         Self {
             repeat_start,
             repeat_end,
