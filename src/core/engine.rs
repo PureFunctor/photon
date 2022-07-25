@@ -56,7 +56,7 @@ pub struct Engine {
     pub into_engine: Consumer<MessageIntoEngine>,
     /// A channel for outgoing messages.
     pub from_engine: Producer<MessageFromEngine>,
-    /// The retrigger effect.
+    /// The retrigger audio effect.
     pub retrigger: Retrigger,
 }
 
@@ -66,8 +66,8 @@ impl Engine {
         samples: Arc<Vec<f32>>,
         into_engine: Consumer<MessageIntoEngine>,
         from_engine: Producer<MessageFromEngine>,
-        retrigger: Retrigger,
     ) -> Self {
+        let retrigger = Retrigger::new(samples.clone());
         Self {
             samples,
             index: 0,
@@ -150,8 +150,6 @@ mod tests {
 
     use rtrb::RingBuffer;
 
-    use crate::core::effect::Retrigger;
-
     use super::Engine;
 
     #[test]
@@ -159,8 +157,7 @@ mod tests {
         let samples = Arc::new(vec![1.0; 4]);
         let (_, into_engine) = RingBuffer::new(8);
         let (from_engine, _) = RingBuffer::new(8);
-        let retrigger = Retrigger::new(samples.clone());
-        let mut engine = Engine::new(samples, into_engine, from_engine, retrigger);
+        let mut engine = Engine::new(samples, into_engine, from_engine);
         let mut buffer = vec![0.0; 8];
         engine.playing = true;
         engine.process(&mut buffer);

@@ -6,13 +6,12 @@ use eframe::{egui, App};
 use log::{error, info};
 use photon::core::{
     audio::SamplesInMemory,
-    effect::Retrigger,
     engine::{Engine, MessageFromEngine, MessageIntoEngine},
 };
 use rtrb::{Consumer, Producer};
 
 fn main() -> anyhow::Result<()> {
-    let file = File::open("assets/decoy.mp3")?;
+    let file = File::open("assets/erin.flac")?;
     let samples = SamplesInMemory::try_from_file(file)?;
 
     if samples.sample_rate != 44100 {
@@ -25,8 +24,7 @@ fn main() -> anyhow::Result<()> {
 
     let (into_engine_p, into_engine_c) = rtrb::RingBuffer::<MessageIntoEngine>::new(8);
     let (from_engine_p, from_engine_c) = rtrb::RingBuffer::<MessageFromEngine>::new(8);
-    let retrigger = Retrigger::new(samples.samples.clone());
-    let mut engine = Engine::new(samples.samples, into_engine_c, from_engine_p, retrigger);
+    let mut engine = Engine::new(samples.samples, into_engine_c, from_engine_p);
 
     let host = cpal::default_host();
     let device = host
@@ -88,7 +86,7 @@ impl App for Photon {
             self.into_engine
                 .push(MessageIntoEngine::RetriggerOn {
                     repeat_factor: 8.0,
-                    beats_per_minute: 180.0,
+                    beats_per_minute: 188.0,
                     mix_factor: 0.8,
                 })
                 .unwrap();
@@ -97,7 +95,7 @@ impl App for Photon {
             self.into_engine
                 .push(MessageIntoEngine::RetriggerOn {
                     repeat_factor: 16.0,
-                    beats_per_minute: 180.0,
+                    beats_per_minute: 188.0,
                     mix_factor: 1.0,
                 })
                 .unwrap();
@@ -106,7 +104,7 @@ impl App for Photon {
             self.into_engine
                 .push(MessageIntoEngine::RetriggerOn {
                     repeat_factor: 32.0,
-                    beats_per_minute: 180.0,
+                    beats_per_minute: 188.0,
                     mix_factor: 0.8,
                 })
                 .unwrap();
