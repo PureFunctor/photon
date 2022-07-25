@@ -1,3 +1,4 @@
+//! Utilities for decoding audio files into samples.
 use std::{fs::File, sync::Arc};
 
 use anyhow::Context;

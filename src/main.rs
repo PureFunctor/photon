@@ -6,7 +6,8 @@ use eframe::{egui, App};
 use log::{error, info};
 use photon::core::{
     audio::SamplesInMemory,
-    engine::{Engine, MessageFromEngine, MessageIntoEngine}, effect::Retrigger,
+    effect::Retrigger,
+    engine::{Engine, MessageFromEngine, MessageIntoEngine},
 };
 use rtrb::{Consumer, Producer};
 
@@ -24,7 +25,7 @@ fn main() -> anyhow::Result<()> {
 
     let (into_engine_p, into_engine_c) = rtrb::RingBuffer::<MessageIntoEngine>::new(8);
     let (from_engine_p, from_engine_c) = rtrb::RingBuffer::<MessageFromEngine>::new(8);
-    let retrigger = Retrigger::new(samples.samples.clone(), 180.0);
+    let retrigger = Retrigger::new(samples.samples.clone());
     let mut engine = Engine::new(samples.samples, into_engine_c, from_engine_p, retrigger);
 
     let host = cpal::default_host();
@@ -85,17 +86,29 @@ impl App for Photon {
         }
         if ctx.input().key_pressed(egui::Key::W) {
             self.into_engine
-                .push(MessageIntoEngine::RetriggerOn(8.0))
+                .push(MessageIntoEngine::RetriggerOn {
+                    repeat_factor: 8.0,
+                    beats_per_minute: 180.0,
+                    mix_factor: 0.8,
+                })
                 .unwrap();
         }
         if ctx.input().key_pressed(egui::Key::E) {
             self.into_engine
-                .push(MessageIntoEngine::RetriggerOn(16.0))
+                .push(MessageIntoEngine::RetriggerOn {
+                    repeat_factor: 16.0,
+                    beats_per_minute: 180.0,
+                    mix_factor: 1.0,
+                })
                 .unwrap();
         }
         if ctx.input().key_pressed(egui::Key::R) {
             self.into_engine
-                .push(MessageIntoEngine::RetriggerOn(32.0))
+                .push(MessageIntoEngine::RetriggerOn {
+                    repeat_factor: 32.0,
+                    beats_per_minute: 180.0,
+                    mix_factor: 0.8,
+                })
                 .unwrap();
         }
         egui::CentralPanel::default().show(ctx, |ui| {

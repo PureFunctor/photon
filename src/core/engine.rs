@@ -1,4 +1,4 @@
-//! This module defines photon's audio engine.
+//! Handles raw sample processing and playback.
 //!
 //! The [`Engine`] type operates over the raw stream of samples and is generally
 //! concerned about applying DSPs and writing samples to the audio
@@ -12,14 +12,18 @@ use std::sync::Arc;
 
 use rtrb::{Consumer, Producer};
 
-use super::effect::Retrigger;
+use super::effect::{Retrigger, RetriggerParameters};
 
 /// Messages into the engine.
 #[derive(Debug)]
 pub enum MessageIntoEngine {
     Play,
     Pause,
-    RetriggerOn(f32),
+    RetriggerOn {
+        repeat_factor: f32,
+        beats_per_minute: f32,
+        mix_factor: f32,
+    },
     RetriggerOff,
 }
 
@@ -96,8 +100,18 @@ impl Engine {
             match message {
                 MessageIntoEngine::Play => self.playing = true,
                 MessageIntoEngine::Pause => self.playing = false,
-                MessageIntoEngine::RetriggerOn(factor) => {
-                    self.retrigger.initialize(self.index, factor);
+                MessageIntoEngine::RetriggerOn {
+                    repeat_factor,
+                    beats_per_minute,
+                    mix_factor,
+                } => {
+                    let parameters = RetriggerParameters::new(
+                        self.index,
+                        repeat_factor,
+                        beats_per_minute,
+                        mix_factor,
+                    );
+                    self.retrigger.initialize(parameters);
                 }
                 MessageIntoEngine::RetriggerOff => {
                     self.retrigger.deinitialize();
@@ -107,7 +121,7 @@ impl Engine {
         if !self.playing {
             quiet(buffer);
         } else {
-            let other = self.index;
+            let track_index = self.index;
             for index in 0..buffer.len() / 2 {
                 if self.index * 2 >= self.samples.len() {
                     buffer[index * 2] = 0.0;
@@ -118,7 +132,7 @@ impl Engine {
                 }
                 self.index += 1;
             }
-            self.retrigger.process(other, buffer);
+            self.retrigger.process(track_index, buffer);
         }
     }
 }
@@ -145,7 +159,7 @@ mod tests {
         let samples = Arc::new(vec![1.0; 4]);
         let (_, into_engine) = RingBuffer::new(8);
         let (from_engine, _) = RingBuffer::new(8);
-        let retrigger = Retrigger::new(samples.clone(), 0.0);
+        let retrigger = Retrigger::new(samples.clone());
         let mut engine = Engine::new(samples, into_engine, from_engine, retrigger);
         let mut buffer = vec![0.0; 8];
         engine.playing = true;
