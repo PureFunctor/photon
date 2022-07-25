@@ -96,7 +96,7 @@ impl App for Photon {
                 .push(MessageIntoEngine::RetriggerOn {
                     repeat_factor: 16.0,
                     beats_per_minute: 188.0,
-                    mix_factor: 1.0,
+                    mix_factor: 0.8,
                 })
                 .unwrap();
         }
