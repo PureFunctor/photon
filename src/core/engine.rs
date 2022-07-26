@@ -25,8 +25,7 @@ pub enum MessageIntoEngine {
     },
     RetriggerOff,
     TranceGateOn {
-        gate_factor: f32,
-        beats_per_minute: f32,
+        gate_duration: f64,
         mix_factor: f32,
     },
     TranceGateOff,
@@ -121,16 +120,10 @@ impl Engine {
                     self.retrigger.deinitialize();
                 }
                 MessageIntoEngine::TranceGateOn {
-                    gate_factor,
-                    beats_per_minute,
+                    gate_duration,
                     mix_factor,
                 } => {
-                    let parameters = TranceGateParameters::new(
-                        self.index,
-                        gate_factor,
-                        beats_per_minute,
-                        mix_factor,
-                    );
+                    let parameters = TranceGateParameters::new(gate_duration, mix_factor);
                     self.trance_gate.initialize(parameters);
                 }
                 MessageIntoEngine::TranceGateOff => {

@@ -115,28 +115,28 @@ impl App for Photon {
                 .unwrap();
         }
         if ctx.input().key_pressed(egui::Key::S) {
+            let gate_duration = 60.0 / 196.0 * 4.0 / 8.0;
             self.into_engine
                 .push(MessageIntoEngine::TranceGateOn {
-                    gate_factor: 8.0,
-                    beats_per_minute: 196.0,
+                    gate_duration,
                     mix_factor: 0.9,
                 })
                 .unwrap();
         }
         if ctx.input().key_pressed(egui::Key::D) {
+            let gate_duration = 60.0 / 196.0 * 4.0 / 16.0;
             self.into_engine
                 .push(MessageIntoEngine::TranceGateOn {
-                    gate_factor: 16.0,
-                    beats_per_minute: 196.0,
+                    gate_duration,
                     mix_factor: 0.9,
                 })
                 .unwrap();
         }
         if ctx.input().key_pressed(egui::Key::F) {
+            let gate_duration = 60.0 / 196.0 * 4.0 / 32.0;
             self.into_engine
                 .push(MessageIntoEngine::TranceGateOn {
-                    gate_factor: 32.0,
-                    beats_per_minute: 196.0,
+                    gate_duration,
                     mix_factor: 0.9,
                 })
                 .unwrap();

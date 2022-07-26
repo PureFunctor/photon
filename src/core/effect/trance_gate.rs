@@ -1,70 +1,56 @@
-//! Fades the track in and out in succession.
+//! Ramps the volume down and up given a duration.
 use std::sync::Arc;
 
+/// The parameters consumed by [`TranceGate`].
 #[derive(Debug, Clone, Copy)]
-/// The parameters for the audio effect.
 pub struct TranceGateParameters {
-    /// The start position of the gate.
-    pub gate_start: usize,
-    /// The end position of the gate.
-    pub gate_end: usize,
-    /// The threshold for fading between repetitions.
-    pub fade_threshold: usize,
-    /// Determines how much of the gate is mixed with the original
-    /// audio source. A value of `1.0` fully mutes the source track,
-    /// which silences it during the gaps produced by the gate.
+    /// The length of the gate effect.
+    pub gate_length: usize,
+    /// The midpoint of the gate effect.
+    pub gate_midpoint: usize,
+    /// Determines how much of the repeated samples is mixed with the
+    /// original audio.
+    ///
+    /// A value of `1.0` will fully mute the original track while the
+    /// "default" value of `0.8` will let some pass through.
     pub mix_factor: f32,
 }
 
 impl TranceGateParameters {
     /// Creates a new [`TranceGateParameters`].
-    pub fn new(
-        gate_start: usize,
-        gate_factor: f32,
-        beats_per_minute: f32,
-        mix_factor: f32,
-    ) -> Self {
-        let gate_duration = 60.0 / beats_per_minute * 2.0 / gate_factor;
-        let gate_samples = (gate_duration * 44100.0) as usize;
-        let gate_end = gate_start + gate_samples;
-        let fade_threshold = (gate_samples / 2).min(441);
+    ///
+    /// # Example
+    ///
+    /// If you want a trance gate that completes a full cycle in 8th
+    /// notes (or a 16th note each to go down then up) in 256 BPM with
+    /// some of the original track playing through:
+    ///
+    /// ```rust
+    /// # use photon::core::effect::trance_gate::*;
+    /// let gate_duration = 60.0 / 256.0 * 4.0 / 8.0;
+    /// let _ = TranceGateParameters::new(gate_duration, 0.8);
+    /// ```
+    pub fn new(gate_duration: f64, mix_factor: f32) -> Self {
+        let gate_length = (gate_duration * 44100.0) as usize;
+        let gate_midpoint = gate_length / 2;
         let mix_factor = mix_factor.clamp(0.0, 1.0);
         Self {
-            gate_start,
-            gate_end,
-            fade_threshold,
+            gate_length,
+            gate_midpoint,
             mix_factor,
-        }
-    }
-
-    /// Compute the fade factor given an index. This number is used
-    /// for fading repetitions in and out to allow for smoother
-    /// transitions.
-    pub fn fade_factor(&self, index: usize) -> f32 {
-        let fade = self.fade_threshold;
-        let after = self.gate_end - fade;
-        let until = self.gate_start + fade;
-        if index < until {
-            (fade - (until - index) + 1) as f32 / fade as f32
-        } else if index > after {
-            (fade - (index - after) + 1) as f32 / fade as f32
-        } else {
-            1.0
         }
     }
 }
 
-/// The trance gate effect and its state
+/// The trance gate DSP and its internal state.
 #[derive(Debug)]
 pub struct TranceGate {
-    /// The stream of audio samples.
+    /// The stream of audio samples
     samples: Arc<Vec<f32>>,
     /// The parameters for the effect.
     parameters: Option<TranceGateParameters>,
-    /// The current index of the gate.
-    index: Option<usize>,
-    /// Determines if the gate is closed.
-    silent: bool,
+    /// The number of samples processsed, used for bookkeeping.
+    counter: usize,
 }
 
 impl TranceGate {
@@ -72,74 +58,66 @@ impl TranceGate {
         Self {
             samples,
             parameters: None,
-            index: None,
-            silent: false,
+            counter: 0,
         }
     }
 }
 
 impl TranceGate {
+    /// Initializes the [`TranceGate`] i.e. turning it on
     pub fn initialize(&mut self, parameters: TranceGateParameters) {
         self.parameters = Some(parameters);
-        self.index = Some(parameters.gate_start);
+        self.counter = 0;
     }
 
+    /// Deinitializes the [`TranceGate`] i.e. turning it off
     pub fn deinitialize(&mut self) {
         self.parameters = None;
-        self.index = None;
-        self.silent = false;
+        self.counter = 0;
     }
 
+    /// Applies the effect to the `buffer`, with the `track_index`
+    /// used for mixing the original track.
+    ///
+    /// This is a no-op if the [`TranceGate`] is deinitialized.
     pub fn process(&mut self, track_index: usize, buffer: &mut [f32]) {
         let parameters = match self.parameters {
             Some(parameters) => parameters,
             None => return,
         };
-        let mut current_index = match self.index {
-            Some(current_index) => current_index,
-            None => return,
-        };
         for index in 0..buffer.len() / 2 {
-            if current_index >= parameters.gate_end {
-                self.silent = !self.silent;
-                current_index = parameters.gate_start;
-            }
-            if self.silent {
-                let (original_0, original_1) = if (track_index + index) * 2 >= self.samples.len() {
-                    (0.0, 0.0)
-                } else {
-                    (
-                        self.samples[(track_index + index) * 2] * (1.0 - parameters.mix_factor),
-                        self.samples[(track_index + index) * 2 + 1] * (1.0 - parameters.mix_factor),
-                    )
-                };
+            let mut gate_factor = 1.0;
 
-                buffer[index * 2] = original_0;
-                buffer[index * 2 + 1] = original_1;
+            if self.counter >= parameters.gate_length {
+                self.counter = 0;
+            }
+
+            if self.counter < parameters.gate_midpoint {
+                gate_factor *= (parameters.gate_midpoint - self.counter) as f32
+                    / parameters.gate_midpoint as f32;
+            } else if self.counter >= parameters.gate_midpoint {
+                gate_factor *= (self.counter - parameters.gate_midpoint) as f32
+                    / parameters.gate_midpoint as f32;
+            }
+
+            let (gate_0, gate_1) = (
+                buffer[index * 2] * gate_factor * parameters.mix_factor,
+                buffer[index * 2 + 1] * gate_factor * parameters.mix_factor,
+            );
+
+            let (original_0, original_1) = if (track_index + index) * 2 >= self.samples.len() {
+                (0.0, 0.0)
             } else {
-                let fade_factor = parameters.fade_factor(current_index);
+                (
+                    self.samples[(track_index + index) * 2] * (1.0 - parameters.mix_factor),
+                    self.samples[(track_index + index) * 2 + 1] * (1.0 - parameters.mix_factor),
+                )
+            };
 
-                let (gate_0, gate_1) = {
-                    (
-                        buffer[index * 2] * fade_factor * parameters.mix_factor,
-                        buffer[index * 2 + 1] * fade_factor * parameters.mix_factor,
-                    )
-                };
+            buffer[index * 2] = gate_0 + original_0;
+            buffer[index * 2 + 1] = gate_1 + original_1;
 
-                let (original_0, original_1) = if (track_index + index) * 2 >= self.samples.len() {
-                    (0.0, 0.0)
-                } else {
-                    (
-                        self.samples[(track_index + index) * 2] * (1.0 - parameters.mix_factor),
-                        self.samples[(track_index + index) * 2 + 1] * (1.0 - parameters.mix_factor),
-                    )
-                };
-
-                buffer[index * 2] = gate_0 + original_0;
-                buffer[index * 2 + 1] = gate_1 + original_1;
-            }
-            current_index += 1;
+            self.counter += 1;
         }
-        self.index = Some(current_index);
     }
 }
