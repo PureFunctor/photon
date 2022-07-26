@@ -1,5 +1,4 @@
 //! Ramps the volume down and up given a duration.
-use std::sync::Arc;
 
 /// The parameters consumed by [`TranceGate`].
 #[derive(Debug, Clone, Copy)]
@@ -45,8 +44,6 @@ impl TranceGateParameters {
 /// The trance gate DSP and its internal state.
 #[derive(Debug)]
 pub struct TranceGate {
-    /// The stream of audio samples
-    samples: Arc<Vec<f32>>,
     /// The parameters for the effect.
     parameters: Option<TranceGateParameters>,
     /// The number of samples processsed, used for bookkeeping.
@@ -54,9 +51,8 @@ pub struct TranceGate {
 }
 
 impl TranceGate {
-    pub fn new(samples: Arc<Vec<f32>>) -> Self {
+    pub fn new() -> Self {
         Self {
-            samples,
             parameters: None,
             counter: 0,
         }
@@ -76,11 +72,10 @@ impl TranceGate {
         self.counter = 0;
     }
 
-    /// Applies the effect to the `buffer`, with the `track_index`
-    /// used for mixing the original track.
+    /// Applies the effect to the `buffer`.
     ///
     /// This is a no-op if the [`TranceGate`] is deinitialized.
-    pub fn process(&mut self, track_index: usize, buffer: &mut [f32]) {
+    pub fn process(&mut self, _: usize, buffer: &mut [f32]) {
         let parameters = match self.parameters {
             Some(parameters) => parameters,
             None => return,
@@ -100,22 +95,13 @@ impl TranceGate {
                     / parameters.gate_midpoint as f32;
             }
 
-            let (gate_0, gate_1) = (
-                buffer[index * 2] * gate_factor * parameters.mix_factor,
-                buffer[index * 2 + 1] * gate_factor * parameters.mix_factor,
-            );
+            // Transform gate_factor such that its baseline is 0.1
+            gate_factor = gate_factor * (1.0 - 0.1) + 0.1;
+            // Transform gate_factor relative to the mix_factor
+            gate_factor = gate_factor * parameters.mix_factor + (1.0 - parameters.mix_factor);
 
-            let (original_0, original_1) = if (track_index + index) * 2 >= self.samples.len() {
-                (0.0, 0.0)
-            } else {
-                (
-                    self.samples[(track_index + index) * 2] * (1.0 - parameters.mix_factor),
-                    self.samples[(track_index + index) * 2 + 1] * (1.0 - parameters.mix_factor),
-                )
-            };
-
-            buffer[index * 2] = gate_0 + original_0;
-            buffer[index * 2 + 1] = gate_1 + original_1;
+            buffer[index * 2] *= gate_factor;
+            buffer[index * 2 + 1] *= gate_factor;
 
             self.counter += 1;
         }

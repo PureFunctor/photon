@@ -74,7 +74,7 @@ impl Engine {
         from_engine: Producer<MessageFromEngine>,
     ) -> Self {
         let retrigger = Retrigger::new(samples.clone());
-        let trance_gate = TranceGate::new(samples.clone());
+        let trance_gate = TranceGate::new();
         Self {
             samples,
             index: 0,
