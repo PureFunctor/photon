@@ -13,6 +13,10 @@ pub struct TranceGateParameters {
     /// A value of `1.0` will fully mute the original track while the
     /// "default" value of `0.8` will let some pass through.
     pub mix_factor: f32,
+    /// The number of samples before fading out.
+    pub fade_out: usize,
+    /// The number of samples before fading in.
+    pub fade_in: usize,
 }
 
 impl TranceGateParameters {
@@ -30,13 +34,17 @@ impl TranceGateParameters {
     /// let _ = TranceGateParameters::new(gate_duration, 0.8);
     /// ```
     pub fn new(gate_duration: f64, mix_factor: f32) -> Self {
-        let gate_length = (gate_duration * 44100.0) as usize;
-        let gate_midpoint = gate_length / 2;
+        let gate_length = gate_duration * 44100.0;
+        let gate_midpoint = gate_length / 2.0;
+        let fade_out = gate_midpoint * 0.05;
+        let fade_in = gate_midpoint * 0.95;
         let mix_factor = mix_factor.clamp(0.0, 1.0);
         Self {
-            gate_length,
-            gate_midpoint,
+            gate_length: gate_length as usize,
+            gate_midpoint: gate_midpoint as usize,
             mix_factor,
+            fade_out: fade_out as usize,
+            fade_in: fade_in as usize,
         }
     }
 }
@@ -81,19 +89,24 @@ impl TranceGate {
             None => return,
         };
         for index in 0..buffer.len() / 2 {
-            let mut gate_factor = 1.0;
-
             if self.counter >= parameters.gate_length {
                 self.counter = 0;
             }
 
-            if self.counter < parameters.gate_midpoint {
-                gate_factor *= (parameters.gate_midpoint - self.counter) as f32
-                    / parameters.gate_midpoint as f32;
-            } else if self.counter >= parameters.gate_midpoint {
-                gate_factor *= (self.counter - parameters.gate_midpoint) as f32
-                    / parameters.gate_midpoint as f32;
-            }
+            let mut gate_factor = if self.counter < parameters.gate_midpoint {
+                if self.counter > parameters.fade_out {
+                    1.0 - (self.counter - parameters.fade_out) as f32 / parameters.fade_in as f32
+                } else {
+                    1.0
+                }
+            } else {
+                let after_midpoint = self.counter - parameters.gate_midpoint;
+                if after_midpoint > parameters.fade_out {
+                    (after_midpoint - parameters.fade_out) as f32 / parameters.fade_in as f32
+                } else {
+                    0.0
+                }
+            };
 
             // Transform gate_factor such that its baseline is 0.1
             gate_factor = gate_factor * (1.0 - 0.1) + 0.1;
