@@ -1,5 +1,5 @@
 //! Fades the track in and out in succession.
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy)]
 /// The parameters for the audio effect.

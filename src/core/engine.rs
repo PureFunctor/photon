@@ -20,8 +20,7 @@ pub enum MessageIntoEngine {
     Play,
     Pause,
     RetriggerOn {
-        repeat_factor: f32,
-        beats_per_minute: f32,
+        repeat_duration: f64,
         mix_factor: f32,
     },
     RetriggerOff,
@@ -111,16 +110,11 @@ impl Engine {
                 MessageIntoEngine::Play => self.playing = true,
                 MessageIntoEngine::Pause => self.playing = false,
                 MessageIntoEngine::RetriggerOn {
-                    repeat_factor,
-                    beats_per_minute,
+                    repeat_duration,
                     mix_factor,
                 } => {
-                    let parameters = RetriggerParameters::new(
-                        self.index,
-                        repeat_factor,
-                        beats_per_minute,
-                        mix_factor,
-                    );
+                    let parameters =
+                        RetriggerParameters::new(self.index, repeat_duration, mix_factor);
                     self.retrigger.initialize(parameters);
                 }
                 MessageIntoEngine::RetriggerOff => {

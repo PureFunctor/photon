@@ -83,28 +83,28 @@ impl App for Photon {
                 .unwrap();
         }
         if ctx.input().key_pressed(egui::Key::W) {
+            let repeat_duration = 60.0 / 196.0 * 4.0 / 8.0;
             self.into_engine
                 .push(MessageIntoEngine::RetriggerOn {
-                    repeat_factor: 8.0,
-                    beats_per_minute: 196.0,
+                    repeat_duration,
                     mix_factor: 0.8,
                 })
                 .unwrap();
         }
         if ctx.input().key_pressed(egui::Key::E) {
+            let repeat_duration = 60.0 / 196.0 * 4.0 / 16.0;
             self.into_engine
                 .push(MessageIntoEngine::RetriggerOn {
-                    repeat_factor: 16.0,
-                    beats_per_minute: 196.0,
+                    repeat_duration,
                     mix_factor: 0.8,
                 })
                 .unwrap();
         }
         if ctx.input().key_pressed(egui::Key::R) {
+            let repeat_duration = 60.0 / 196.0 * 4.0 / 32.0;
             self.into_engine
                 .push(MessageIntoEngine::RetriggerOn {
-                    repeat_factor: 32.0,
-                    beats_per_minute: 196.0,
+                    repeat_duration,
                     mix_factor: 0.8,
                 })
                 .unwrap();
